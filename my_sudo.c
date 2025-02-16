@@ -6,9 +6,9 @@
 #include <errno.h>
 
 // Assumptions:
-// - The target command is provided as the first argument (with an absolute or relative path).
-// - The program is installed as a setuid-root binary so that its effective UID is initially 0.
-// - The caller has provided a valid command; proper error messages are printed if not.
+// - The target command is provided as the first argument (absolute or relative path).
+// - The program is installed as a setuid-root binary (its effective UID is initially 0).
+// - The caller provides a valid command; error messages are printed otherwise.
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
@@ -16,9 +16,8 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     
-    // Retrieve the real and effective user IDs.
+    // Retrieve the real user ID.
     uid_t real_uid = getuid();
-    uid_t effective_uid = geteuid();
     
     // Verify that the target command exists and is executable.
     if (access(argv[1], X_OK) != 0) {
@@ -33,8 +32,7 @@ int main(int argc, char *argv[]) {
         exit(EXIT_FAILURE);
     }
     
-    // If the target command is not owned by root (i.e. non-root owned),
-    // drop privileges by switching to the real (non-root) user.
+    // If the target command is not owned by root, drop privileges.
     if (sb.st_uid != 0) {
         // Temporarily drop privileges using seteuid().
         if (seteuid(real_uid) == -1) {
