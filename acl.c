@@ -1,114 +1,141 @@
+#include <sys/types.h>
+#include <sys/extattr.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <sys/xattr.h>
-#include <pwd.h>
-#include <errno.h>
 
 #define BUFFER_SIZE 1024
 
-// Structure to hold ACL
-typedef struct {
+// Structure to hold ACL data (simplified version for this example)
+typedef struct ACL {
     uid_t owner;
-    char acl[BUFFER_SIZE];  // Store ACL in a string (for simplicity)
+    // A simple structure to store ACL entries (user_id, permissions)
+    // In real scenarios, this would be a more complex structure.
+    struct {
+        uid_t user;
+        int perms;
+    } entries[10];  // Limit to 10 ACL entries for this example
+    int entry_count;
 } ACL;
 
-// Function to load ACL from extended attributes
+// Function to serialize ACL (convert to string)
+char* serialize_acl(ACL* acl) {
+    char* serialized = (char*)malloc(BUFFER_SIZE);
+    memset(serialized, 0, BUFFER_SIZE);
+
+    snprintf(serialized, BUFFER_SIZE, "Owner: %d\n", acl->owner);
+    for (int i = 0; i < acl->entry_count; i++) {
+        snprintf(serialized + strlen(serialized), BUFFER_SIZE - strlen(serialized), 
+                 "User: %d, Perms: %d\n", acl->entries[i].user, acl->entries[i].perms);
+    }
+
+    return serialized;
+}
+
+// Function to deserialize ACL (convert from string)
+int deserialize_acl(ACL* acl, const char* serialized_acl) {
+    sscanf(serialized_acl, "Owner: %d", &(acl->owner));
+    return 0;
+}
+
+// Load ACL from file's extended attributes
 int load_acl(const char* file, ACL* acl) {
-    ssize_t acl_size;
-    acl_size = getxattr(file, "user.acl", acl->acl, sizeof(acl->acl));
-
-    if (acl_size == -1) {
-        perror("Error loading ACL");
+    ssize_t acl_attr = extattr_get_file(file, EXTATTR_NAMESPACE_USER, "acl", NULL, 0);
+    if (acl_attr == -1) {
+        printf("No ACL found for %s\n", file);
         return -1;
     }
 
-    // For simplicity, assume ACL is just a string in the extended attributes
-    printf("ACL loaded for file: %s\n", file);
+    char* acl_data = (char*)malloc(acl_attr + 1);
+    acl_attr = extattr_get_file(file, EXTATTR_NAMESPACE_USER, "acl", acl_data, acl_attr);
+    if (acl_attr == -1) {
+        printf("Error reading ACL for %s\n", file);
+        free(acl_data);
+        return -1;
+    }
+
+    acl_data[acl_attr] = '\0';  // Null-terminate the string
+    deserialize_acl(acl, acl_data);
+    free(acl_data);
+
     return 0;
 }
 
-// Function to save ACL to extended attributes
-int save_acl(const char* file, const ACL* acl) {
-    if (setxattr(file, "user.acl", acl->acl, strlen(acl->acl), 0) == -1) {
-        perror("Error saving ACL");
+// Save ACL to file's extended attributes
+int save_acl(const char* file, ACL* acl) {
+    char* acl_str = serialize_acl(acl);
+
+    if (extattr_set_file(file, EXTATTR_NAMESPACE_USER, "acl", acl_str, strlen(acl_str)) == -1) {
+        printf("Error: Could not set ACL for %s\n", file);
+        free(acl_str);
         return -1;
     }
 
-    printf("ACL saved for file: %s\n", file);
+    free(acl_str);
     return 0;
 }
 
-// Function to check if the user has permission for a file
-int check_permission(const ACL* acl, uid_t user, const char* perm) {
-    // For simplicity, assume the ACL is in string format like "user:uid=rw-"
-    if (strstr(acl->acl, "rw-") != NULL) {
-        return 1;  // Allow if the ACL contains rw- permissions
+// Example function to set permissions for a user
+int set_acl_for_user(ACL* acl, uid_t user, int perms) {
+    for (int i = 0; i < acl->entry_count; i++) {
+        if (acl->entries[i].user == user) {
+            acl->entries[i].perms = perms;  // Update existing ACL entry
+            return 0;
+        }
     }
-    return 0;  // Deny otherwise
+
+    if (acl->entry_count < 10) {
+        acl->entries[acl->entry_count].user = user;
+        acl->entries[acl->entry_count].perms = perms;
+        acl->entry_count++;
+        return 0;
+    }
+
+    return -1;  // Too many entries
 }
 
-// Function to get file owner
-uid_t get_owner(const char* file) {
-    struct stat stat_buf;
-    if (stat(file, &stat_buf) == -1) {
-        perror("Error getting file status");
-        return -1;
+// Example function to check ACL for a user
+int check_acl(ACL* acl, uid_t user, int perms) {
+    for (int i = 0; i < acl->entry_count; i++) {
+        if (acl->entries[i].user == user) {
+            return acl->entries[i].perms & perms;  // Return permission bitmask
+        }
     }
-    return stat_buf.st_uid;
+    return 0;
 }
 
-// Main driver for getacl
-int main(int argc, char** argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Usage: %s <file>\n", argv[0]);
+int main(int argc, char *argv[]) {
+    if (argc < 3) {
+        printf("Usage: %s <file> <user>\n", argv[0]);
         return 1;
     }
 
     const char* file = argv[1];
-    ACL acl;
+    uid_t user = atoi(argv[2]);  // Convert user (ID) passed as argument
 
+    ACL acl;
+    acl.entry_count = 0;  // Initialize ACL entry count
+
+    // Load the ACL for the file
     if (load_acl(file, &acl) == -1) {
         return 1;
     }
 
-    // Here we simply print the ACL (you can customize it as needed)
-    printf("ACL for file %s: %s\n", file, acl.acl);
-
-    return 0;
-}
-
-// Main driver for setacl
-int set_acl(int argc, char** argv) {
-    if (argc < 4) {
-        fprintf(stderr, "Usage: %s -[rwx] <user> <file>\n", argv[0]);
-        return 1;
+    // Check if the user has read permission
+    if (check_acl(&acl, user, 4)) {
+        printf("User %d has read permission for %s\n", user, file);
+    } else {
+        printf("User %d does not have read permission for %s\n", user, file);
     }
 
-    const char* perms = argv[1];
-    const char* user = argv[2];
-    const char* file = argv[3];
-
-    // Create or load ACL
-    ACL acl;
-    if (load_acl(file, &acl) == -1) {
-        return 1;
+    // Example: set write permission (2) for the user
+    if (set_acl_for_user(&acl, user, 6) == 0) {
+        printf("Updated ACL for user %d on %s\n", user, file);
+        // Save the ACL back to the file
+        save_acl(file, &acl);
+    } else {
+        printf("Failed to update ACL for user %d on %s\n", user, file);
     }
 
-    // Update the ACL string (simplified example)
-    strcat(acl.acl, " user:");
-    strcat(acl.acl, user);
-    strcat(acl.acl, "=");
-    strcat(acl.acl, perms);
-
-    // Save the modified ACL back to the file
-    if (save_acl(file, &acl) == -1) {
-        return 1;
-    }
-
-    printf("ACL updated for file: %s\n", file);
     return 0;
 }
