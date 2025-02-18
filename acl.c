@@ -2,15 +2,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
-#include <sys/extattr.h>  // Updated header for extended attributes
+#include <sys/extattr.h>
 #include <pwd.h>
 #include <unistd.h>
-#include <stdint.h>
-#include <sys/stat.h>
 
 #define BUFFER_SIZE 1024
 
-// Define structure for ACL
 typedef struct ACL {
     uid_t owner;
     struct {
@@ -20,34 +17,28 @@ typedef struct ACL {
     int acl_count;
 } ACL;
 
-// Function to initialize ACL
 void ACL_init(ACL *acl) {
     acl->owner = -1;
     acl->acl_count = 0;
 }
 
-// Function to set owner of ACL
 void ACL_set_owner(ACL *acl, uid_t owner) {
     acl->owner = owner;
 }
 
-// Function to get owner of ACL
 uid_t ACL_get_owner(ACL *acl) {
     return acl->owner;
 }
 
-// Function to add user-permission pair to ACL
 void ACL_add(ACL *acl, int user, int perms) {
     acl->acl[acl->acl_count].user = user;
     acl->acl[acl->acl_count].perms = perms;
     acl->acl_count++;
 }
 
-// Function to remove user from ACL
 void ACL_remove(ACL *acl, int user) {
     for (int i = 0; i < acl->acl_count; i++) {
         if (acl->acl[i].user == user) {
-            // Shift remaining ACL entries to remove the user
             for (int j = i; j < acl->acl_count - 1; j++) {
                 acl->acl[j] = acl->acl[j + 1];
             }
@@ -57,7 +48,6 @@ void ACL_remove(ACL *acl, int user) {
     }
 }
 
-// Function to check permissions for a user in ACL
 int ACL_check(ACL *acl, int user, int perms) {
     for (int i = 0; i < acl->acl_count; i++) {
         if (acl->acl[i].user == user && (acl->acl[i].perms & perms) == perms) {
@@ -67,7 +57,6 @@ int ACL_check(ACL *acl, int user, int perms) {
     return 0;
 }
 
-// Function to load ACL from extended attributes of a file
 int ACL_load(ACL *acl, const char *file) {
     char acl_str[BUFFER_SIZE];
     ssize_t acl_attr = extattr_get_file(file, EXTATTR_NAMESPACE_USER, "acl", acl_str, sizeof(acl_str));
@@ -75,19 +64,14 @@ int ACL_load(ACL *acl, const char *file) {
         perror("Error loading ACL");
         return 0;
     }
-    // Deserialize ACL here
-    // For simplicity, assuming we just read it as a string and add it to ACL structure
-    acl->owner = getuid(); // Example: setting owner to current user
+    acl->owner = getuid();
     return 1;
 }
 
-// Function to save ACL to extended attributes of a file
 int ACL_save(ACL *acl, const char *file) {
-    // For simplicity, just converting ACL structure to string
-    // Implement real serialization if required
     char acl_str[BUFFER_SIZE];
     snprintf(acl_str, sizeof(acl_str), "Owner: %d, ACL count: %d", acl->owner, acl->acl_count);
-    
+
     if (extattr_set_file(file, EXTATTR_NAMESPACE_USER, "acl", acl_str, strlen(acl_str)) == -1) {
         perror("Error saving ACL");
         return 0;
@@ -95,18 +79,13 @@ int ACL_save(ACL *acl, const char *file) {
     return 1;
 }
 
-// Main function to test the ACL functions
 int main() {
     ACL acl;
     ACL_init(&acl);  // Initialize the ACL
 
-    // Set owner
     ACL_set_owner(&acl, getuid());
+    ACL_add(&acl, 1001, 7);
 
-    // Add user-permission pair
-    ACL_add(&acl, 1001, 7);  // User 1001 with full permissions
-
-    // Save the ACL to a file
     const char *file = "test_file.txt";
     if (ACL_save(&acl, file)) {
         printf("ACL saved successfully to %s\n", file);
@@ -114,21 +93,12 @@ int main() {
         printf("Failed to save ACL.\n");
     }
 
-    // Load the ACL from the file
     ACL acl_loaded;
-    ACL_init(&acl_loaded);  // Initialize the loaded ACL
+    ACL_init(&acl_loaded);
     if (ACL_load(&acl_loaded, file)) {
         printf("ACL loaded successfully from %s\n", file);
     } else {
         printf("Failed to load ACL.\n");
     }
 
-    // Check if user has permission
-    if (ACL_check(&acl_loaded, 1001, 7)) {
-        printf("User has permission.\n");
-    } else {
-        printf("User does not have permission.\n");
-    }
-
-    return 0;
-}
+    if (ACL_check(&acl_loaded, 100
