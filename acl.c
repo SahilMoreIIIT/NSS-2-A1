@@ -86,7 +86,7 @@ int main() {
     ACL_set_owner(&acl, getuid());
     ACL_add(&acl, 1001, 7);
 
-    const char *file = "test_file.txt";
+    const char *file = "/ACLTesting/India/China.txt";
     if (ACL_save(&acl, file)) {
         printf("ACL saved successfully to %s\n", file);
     } else {
@@ -101,7 +101,7 @@ int main() {
         printf("Failed to load ACL.\n");
     }
 
-    if (ACL_check(&acl_loaded, 1001, 7)) {
+    if (ACL_check(&acl_loaded, 1003, 7)) {
         printf("User has permission.\n");
     } else {
         printf("User does not have permission.\n");
