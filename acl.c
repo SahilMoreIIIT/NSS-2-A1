@@ -101,4 +101,11 @@ int main() {
         printf("Failed to load ACL.\n");
     }
 
-    if (ACL_check(&acl_loaded, 100
+    if (ACL_check(&acl_loaded, 1001, 7)) {
+        printf("User has permission.\n");
+    } else {
+        printf("User does not have permission.\n");
+    }
+
+    return 0;
+}
