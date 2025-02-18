@@ -5,59 +5,47 @@
 #include <sys/stat.h>
 #include <errno.h>
 
-// Assumptions:
-// - The target command is provided as the first argument (absolute or relative path).
-// - The program is installed as a setuid-root binary (its effective UID is initially 0).
-// - The caller provides a valid command; error messages are printed otherwise.
+// Function to safely execute the command
+void execute_command(char *cmd, char *argv[]) {
+    execvp(cmd, argv);
+    perror("execvp failed");
+    exit(EXIT_FAILURE);
+}
 
 int main(int argc, char *argv[]) {
     if (argc < 2) {
         fprintf(stderr, "Usage: %s <command> [args...]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
-    
-    // Retrieve the real user ID.
+
+    // Get real and effective user IDs
     uid_t real_uid = getuid();
-    
-    // Verify that the target command exists and is executable.
-    if (access(argv[1], X_OK) != 0) {
-        perror("access");
-        exit(EXIT_FAILURE);
-    }
-    
-    // Obtain file status of the target command to check its ownership.
+    uid_t effective_uid = geteuid();
+
+    // Verify that the target command exists
     struct stat sb;
     if (stat(argv[1], &sb) == -1) {
-        perror("stat");
+        perror("stat failed");
         exit(EXIT_FAILURE);
     }
-    
-    // If the target command is not owned by root, drop privileges.
-    if (sb.st_uid != 0) {
-        // Temporarily drop privileges using seteuid().
-        if (seteuid(real_uid) == -1) {
-            perror("seteuid");
-            exit(EXIT_FAILURE);
-        }
-        // Permanently drop privileges using setuid().
-        if (setuid(real_uid) == -1) {
-            perror("setuid");
+
+    // Check ownership of the target file
+    if (sb.st_uid == 0) {
+        // If the file is owned by root, retain root privileges (effective UID stays as root)
+        if (seteuid(0) == -1) {
+            perror("Failed to set effective UID to root");
             exit(EXIT_FAILURE);
         }
     } else {
-        // Optional: If the target is owned by root, ensure we remain with elevated privileges.
-        if (seteuid(0) == -1) {
-            perror("seteuid to root");
+        // If the file is NOT owned by root, drop privileges to the calling user
+        if (seteuid(real_uid) == -1) {
+            perror("Failed to drop privileges to real user");
             exit(EXIT_FAILURE);
         }
     }
-    
-    // Execute the target command with any additional arguments.
-    if (execvp(argv[1], &argv[1]) == -1) {
-        perror("execvp");
-        exit(EXIT_FAILURE);
-    }
-    
-    // This point is not reached unless execvp() fails.
+
+    // Execute the command
+    execute_command(argv[1], &argv[1]);
+
     return 0;
 }
