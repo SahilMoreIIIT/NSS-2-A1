@@ -77,7 +77,6 @@ int ACL_load(ACL *acl, const char *file) {
     }
     // Deserialize ACL here
     // For simplicity, assuming we just read it as a string and add it to ACL structure
-    // You could implement more complex deserialization logic as needed
     acl->owner = getuid(); // Example: setting owner to current user
     return 1;
 }
@@ -96,3 +95,40 @@ int ACL_save(ACL *acl, const char *file) {
     return 1;
 }
 
+// Main function to test the ACL functions
+int main() {
+    ACL acl;
+    ACL_init(&acl);  // Initialize the ACL
+
+    // Set owner
+    ACL_set_owner(&acl, getuid());
+
+    // Add user-permission pair
+    ACL_add(&acl, 1001, 7);  // User 1001 with full permissions
+
+    // Save the ACL to a file
+    const char *file = "test_file.txt";
+    if (ACL_save(&acl, file)) {
+        printf("ACL saved successfully to %s\n", file);
+    } else {
+        printf("Failed to save ACL.\n");
+    }
+
+    // Load the ACL from the file
+    ACL acl_loaded;
+    ACL_init(&acl_loaded);  // Initialize the loaded ACL
+    if (ACL_load(&acl_loaded, file)) {
+        printf("ACL loaded successfully from %s\n", file);
+    } else {
+        printf("Failed to load ACL.\n");
+    }
+
+    // Check if user has permission
+    if (ACL_check(&acl_loaded, 1001, 7)) {
+        printf("User has permission.\n");
+    } else {
+        printf("User does not have permission.\n");
+    }
+
+    return 0;
+}
